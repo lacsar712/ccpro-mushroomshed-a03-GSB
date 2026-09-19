@@ -46,14 +46,20 @@ docker compose up --build
 2. **Shed 菇房**：`name`、`location`、`notes`
 3. **Room 出菇室**：`shedId`、`roomCode`、`species`、`capacityBags`、`status(fruiting|idle|sanitize)`；同菇房 `roomCode` 唯一
 4. **ClimateLog 环境记录**：`roomId`、`recordedAt`、`tempC`、`humidityPct`、`co2Ppm`、`notes`；`humidityPct ∈ [1,100]`，否则 **400**
-5. **FlushHarvest 采收**：`roomId`、`harvestedAt`、`flushNo(≥1)`、`weightKg`、`grade(A|B|C)`、`operatorName`；`weightKg > 0`，否则 **400**
-6. **Dashboard**：`shedTotal`、`fruitingRoomCount`、`climateLast24h`、`harvestKgLast7d`
+5. **ContamCheck 杂菌快检**：挂在 ClimateLog 上，`climateLogId` 唯一（每条环境记录最多一条，重复 **409**）、`result(clear|suspect|positive)`、`checkedAt`、`message`（可空）
+   - `positive` → 所属 Room 转入 `sanitize`；`suspect` / `clear` 不动室态
+   - `idle` 室禁止因快检进入 `sanitize`（**409**）
+6. **ReleaseNote 消杀解除**：`roomId`、`reason`、`releasedAt`；Room 离开 `sanitize` 必须随 `PATCH /api/rooms/<id>/status` 提供 `reason`（服务端落 ReleaseNote），否则 **409**
+7. **FlushHarvest 采收**：`roomId`、`harvestedAt`、`flushNo(≥1)`、`weightKg`、`grade(A|B|C)`、`operatorName`；`weightKg > 0`，否则 **400**
+8. **Dashboard**：`shedTotal`、`fruitingRoomCount`、`climateLast24h`、`harvestKgLast7d`
 
-各实体 API：`GET/POST` 列表与创建、`DELETE` 按 ID 删除。
+各实体 API：`GET/POST` 列表与创建、`DELETE` 按 ID 删除（ContamCheck / ReleaseNote 为 `GET/POST`，ReleaseNote 经改态接口写入）。Room 另有 `PATCH /api/rooms/<id>/status` 改态。
+
+Seed 含一条 `positive` 快检联动：`V-01`（杏鲍菇）因快检阳性转入 `sanitize`；另有 `suspect`、`clear` 各一条。
 
 ## 前端页面
 
-Login · Dashboard · Sheds · Rooms · ClimateLogs · FlushHarvests（侧边栏布局）
+Login · Dashboard · Sheds · Rooms（含改态与消杀解除记录） · ClimateLogs（内嵌快检结果） · ContamChecks（杂菌快检） · FlushHarvests（侧边栏布局）
 
 ## 本地开发（可选）
 

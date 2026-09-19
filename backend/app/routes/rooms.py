@@ -1,17 +1,21 @@
+from datetime import datetime, timezone
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 from marshmallow import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from app.database import SessionLocal
+from app.models.release_note import ReleaseNote
 from app.models.room import Room
 from app.models.shed import Shed
-from app.schemas.room import RoomCreateSchema, RoomOutSchema
+from app.schemas.room import RoomCreateSchema, RoomOutSchema, RoomStatusUpdateSchema
 from app.utils import validation_error_response
 
 bp = Blueprint("rooms", __name__, url_prefix="/api/rooms")
 
 create_schema = RoomCreateSchema()
+status_schema = RoomStatusUpdateSchema()
 out_schema = RoomOutSchema()
 out_many = RoomOutSchema(many=True)
 
@@ -58,6 +62,42 @@ def create_room():
             return jsonify({"detail": "同菇房内出菇室编号已存在"}), 400
         db.refresh(item)
         return jsonify(out_schema.dump(item)), 201
+    finally:
+        db.close()
+
+
+@bp.patch("/<int:room_id>/status")
+@jwt_required()
+def update_room_status(room_id: int):
+    db = SessionLocal()
+    try:
+        try:
+            data = status_schema.load(request.get_json(silent=True) or {})
+        except ValidationError as err:
+            return validation_error_response(err)
+        room = db.query(Room).filter(Room.id == room_id).first()
+        if not room:
+            return jsonify({"detail": "出菇室不存在"}), 404
+        target = data["status"]
+        if room.status == "sanitize" and target != "sanitize":
+            reason = (data.get("reason") or "").strip()
+            if not reason:
+                return (
+                    jsonify({"detail": "出菇室离开 sanitize 须提供 ReleaseNote(reason)"}),
+                    409,
+                )
+            db.add(
+                ReleaseNote(
+                    room_id=room.id,
+                    reason=reason,
+                    released_at=data.get("released_at")
+                    or datetime.now(timezone.utc),
+                )
+            )
+        room.status = target
+        db.commit()
+        db.refresh(room)
+        return jsonify(out_schema.dump(room))
     finally:
         db.close()
 

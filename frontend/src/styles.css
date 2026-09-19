@@ -279,6 +279,31 @@ th {
   color: var(--warn);
 }
 
+.badge.clear {
+  background: #dceee0;
+  color: #2a6b3f;
+}
+
+.badge.suspect {
+  background: #fdf3d7;
+  color: var(--warn);
+}
+
+.badge.positive {
+  background: #fadbd8;
+  color: var(--danger);
+}
+
+.status-changer {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.status-changer select {
+  padding: 6px 8px;
+}
+
 .badge.grade-a {
   background: #dceee0;
   color: #2a6b3f;

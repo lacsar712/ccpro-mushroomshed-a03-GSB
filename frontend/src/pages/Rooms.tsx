@@ -1,7 +1,7 @@
 import { createSignal, onMount } from 'solid-js'
 import { For } from 'solid-js'
 import { api } from '../api/client'
-import type { Room, RoomStatus, Shed } from '../types'
+import type { ReleaseNote, Room, RoomStatus, Shed } from '../types'
 
 const statuses: RoomStatus[] = ['fruiting', 'idle', 'sanitize']
 
@@ -13,19 +13,67 @@ const empty = {
   status: 'fruiting' as RoomStatus,
 }
 
+function StatusChanger(props: {
+  room: Room
+  onChanged: () => Promise<void>
+  onError: (msg: string) => void
+}) {
+  const [target, setTarget] = createSignal<RoomStatus>(props.room.status)
+
+  async function apply() {
+    const t = target()
+    if (t === props.room.status) return
+    let reason: string | undefined
+    if (props.room.status === 'sanitize' && t !== 'sanitize') {
+      const input = prompt('出菇室离开 sanitize 须登记 ReleaseNote，请输入解除原因')
+      if (!input) {
+        props.onError('已取消：离开 sanitize 必须提供 ReleaseNote 原因')
+        return
+      }
+      reason = input
+    }
+    try {
+      await api(`/api/rooms/${props.room.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify(reason ? { status: t, reason } : { status: t }),
+      })
+      await props.onChanged()
+    } catch (err) {
+      props.onError(err instanceof Error ? err.message : '状态更新失败')
+    }
+  }
+
+  return (
+    <span class="status-changer">
+      <select
+        value={target()}
+        onChange={(e) => setTarget(e.currentTarget.value as RoomStatus)}
+      >
+        <For each={statuses}>{(s) => <option value={s}>{s}</option>}</For>
+      </select>
+      <button type="button" class="btn ghost" onClick={apply}>
+        改态
+      </button>
+    </span>
+  )
+}
+
 export default function Rooms() {
   const [rows, setRows] = createSignal<Room[]>([])
   const [sheds, setSheds] = createSignal<Shed[]>([])
+  const [releases, setReleases] = createSignal<ReleaseNote[]>([])
   const [form, setForm] = createSignal({ ...empty })
   const [error, setError] = createSignal('')
 
   async function load() {
-    const [rooms, shedList] = await Promise.all([
+    const [rooms, shedList, releaseList] = await Promise.all([
       api<Room[]>('/api/rooms'),
       api<Shed[]>('/api/sheds'),
+      api<ReleaseNote[]>('/api/release-notes'),
     ])
     setRows(rooms)
     setSheds(shedList)
+    setReleases(releaseList)
   }
 
   onMount(() => {
@@ -141,6 +189,7 @@ export default function Rooms() {
               <th>品种</th>
               <th>容量</th>
               <th>状态</th>
+              <th>改态</th>
               <th />
             </tr>
           </thead>
@@ -157,10 +206,42 @@ export default function Rooms() {
                     <span class={statusBadge(r.status)}>{r.status}</span>
                   </td>
                   <td>
+                    <StatusChanger room={r} onChanged={load} onError={setError} />
+                  </td>
+                  <td>
                     <button type="button" class="btn ghost" onClick={() => remove(r.id)}>
                       删除
                     </button>
                   </td>
+                </tr>
+              )}
+            </For>
+          </tbody>
+        </table>
+      </div>
+
+      <header class="page-header">
+        <h1>消杀解除记录</h1>
+        <p class="muted">出菇室离开 sanitize 须登记 ReleaseNote</p>
+      </header>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>室 ID</th>
+              <th>解除原因</th>
+              <th>解除时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <For each={releases()}>
+              {(n) => (
+                <tr>
+                  <td>{n.id}</td>
+                  <td>{n.roomId}</td>
+                  <td>{n.reason}</td>
+                  <td>{new Date(n.releasedAt).toLocaleString()}</td>
                 </tr>
               )}
             </For>

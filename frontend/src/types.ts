@@ -1,5 +1,6 @@
 export type RoomStatus = 'fruiting' | 'idle' | 'sanitize'
 export type HarvestGrade = 'A' | 'B' | 'C'
+export type ContamResult = 'clear' | 'suspect' | 'positive'
 
 export interface Shed {
   id: number
@@ -25,6 +26,21 @@ export interface ClimateLog {
   humidityPct: number
   co2Ppm?: number | null
   notes?: string | null
+}
+
+export interface ContamCheck {
+  id: number
+  climateLogId: number
+  result: ContamResult
+  checkedAt: string
+  message?: string | null
+}
+
+export interface ReleaseNote {
+  id: number
+  roomId: number
+  reason: string
+  releasedAt: string
 }
 
 export interface FlushHarvest {

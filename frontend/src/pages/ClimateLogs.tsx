@@ -1,7 +1,7 @@
-import { createSignal, onMount } from 'solid-js'
+import { createMemo, createSignal, onMount } from 'solid-js'
 import { For } from 'solid-js'
 import { api } from '../api/client'
-import type { ClimateLog, Room } from '../types'
+import type { ClimateLog, ContamCheck, Room } from '../types'
 
 function toLocalInput(iso?: string) {
   const d = iso ? new Date(iso) : new Date()
@@ -21,16 +21,21 @@ const empty = {
 export default function ClimateLogs() {
   const [rows, setRows] = createSignal<ClimateLog[]>([])
   const [rooms, setRooms] = createSignal<Room[]>([])
+  const [checks, setChecks] = createSignal<ContamCheck[]>([])
   const [form, setForm] = createSignal({ ...empty })
   const [error, setError] = createSignal('')
 
+  const checkByLogId = createMemo(() => new Map(checks().map((c) => [c.climateLogId, c])))
+
   async function load() {
-    const [logs, roomList] = await Promise.all([
+    const [logs, roomList, checkList] = await Promise.all([
       api<ClimateLog[]>('/api/climate-logs'),
       api<Room[]>('/api/rooms'),
+      api<ContamCheck[]>('/api/contam-checks'),
     ])
     setRows(logs)
     setRooms(roomList)
+    setChecks(checkList)
   }
 
   onMount(() => {
@@ -157,6 +162,7 @@ export default function ClimateLogs() {
               <th>湿度</th>
               <th>CO₂</th>
               <th>备注</th>
+              <th>快检</th>
               <th />
             </tr>
           </thead>
@@ -171,6 +177,12 @@ export default function ClimateLogs() {
                   <td>{r.humidityPct}%</td>
                   <td>{r.co2Ppm ?? '—'}</td>
                   <td>{r.notes || '—'}</td>
+                  <td>
+                    {(() => {
+                      const c = checkByLogId().get(r.id)
+                      return c ? <span class={`badge ${c.result}`}>{c.result}</span> : '—'
+                    })()}
+                  </td>
                   <td>
                     <button type="button" class="btn ghost" onClick={() => remove(r.id)}>
                       删除

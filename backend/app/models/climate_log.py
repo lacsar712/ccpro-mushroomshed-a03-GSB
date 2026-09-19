@@ -19,3 +19,9 @@ class ClimateLog(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     room: Mapped["Room"] = relationship("Room", back_populates="climate_logs")
+    contam_check: Mapped[Optional["ContamCheck"]] = relationship(
+        "ContamCheck",
+        back_populates="climate_log",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from app.auth import hash_password
 from app.database import SessionLocal
 from app.models.climate_log import ClimateLog
+from app.models.contam_check import ContamCheck
 from app.models.flush_harvest import FlushHarvest
 from app.models.room import Room
 from app.models.shed import Shed
@@ -77,40 +78,44 @@ def seed() -> None:
             db.flush()
 
             now = datetime.now(timezone.utc)
+            log_r1_morning = ClimateLog(
+                room_id=r1.id,
+                recorded_at=now - timedelta(hours=2),
+                temp_c=18.5,
+                humidity_pct=88,
+                co2_ppm=950.0,
+                notes="晨检正常",
+            )
+            log_r1_night = ClimateLog(
+                room_id=r1.id,
+                recorded_at=now - timedelta(hours=8),
+                temp_c=17.8,
+                humidity_pct=90,
+                co2_ppm=880.0,
+                notes=None,
+            )
+            log_r3_recent = ClimateLog(
+                room_id=r3.id,
+                recorded_at=now - timedelta(hours=4),
+                temp_c=16.2,
+                humidity_pct=85,
+                co2_ppm=720.0,
+                notes="CO2 略偏高",
+            )
+            log_r3_earlier = ClimateLog(
+                room_id=r3.id,
+                recorded_at=now - timedelta(hours=12),
+                temp_c=15.9,
+                humidity_pct=87,
+                co2_ppm=690.0,
+                notes=None,
+            )
             db.add_all(
                 [
-                    ClimateLog(
-                        room_id=r1.id,
-                        recorded_at=now - timedelta(hours=2),
-                        temp_c=18.5,
-                        humidity_pct=88,
-                        co2_ppm=950.0,
-                        notes="晨检正常",
-                    ),
-                    ClimateLog(
-                        room_id=r1.id,
-                        recorded_at=now - timedelta(hours=8),
-                        temp_c=17.8,
-                        humidity_pct=90,
-                        co2_ppm=880.0,
-                        notes=None,
-                    ),
-                    ClimateLog(
-                        room_id=r3.id,
-                        recorded_at=now - timedelta(hours=4),
-                        temp_c=16.2,
-                        humidity_pct=85,
-                        co2_ppm=720.0,
-                        notes="CO2 略偏高",
-                    ),
-                    ClimateLog(
-                        room_id=r3.id,
-                        recorded_at=now - timedelta(hours=12),
-                        temp_c=15.9,
-                        humidity_pct=87,
-                        co2_ppm=690.0,
-                        notes=None,
-                    ),
+                    log_r1_morning,
+                    log_r1_night,
+                    log_r3_recent,
+                    log_r3_earlier,
                     FlushHarvest(
                         room_id=r1.id,
                         harvested_at=now - timedelta(hours=6),
@@ -137,6 +142,32 @@ def seed() -> None:
                     ),
                 ]
             )
+            db.flush()
+
+            # 杂菌快检联动：V-01 快检 positive → 室态转 sanitize
+            db.add_all(
+                [
+                    ContamCheck(
+                        climate_log_id=log_r3_recent.id,
+                        result="positive",
+                        checked_at=now - timedelta(hours=1),
+                        message="检出木霉孢子，复核确认，立即隔离消杀",
+                    ),
+                    ContamCheck(
+                        climate_log_id=log_r1_morning.id,
+                        result="suspect",
+                        checked_at=now - timedelta(hours=1),
+                        message="疑似链格孢，24h 后复核",
+                    ),
+                    ContamCheck(
+                        climate_log_id=log_r1_night.id,
+                        result="clear",
+                        checked_at=now - timedelta(hours=2),
+                        message=None,
+                    ),
+                ]
+            )
+            r3.status = "sanitize"
             db.commit()
             print("Seed data inserted.")
         else:
