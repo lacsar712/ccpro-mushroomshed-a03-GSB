@@ -1,7 +1,7 @@
-import { createSignal, onMount } from 'solid-js'
-import { For } from 'solid-js'
+import { createMemo, createSignal, onMount } from 'solid-js'
+import { For, Show } from 'solid-js'
 import { api } from '../api/client'
-import type { ClimateLog, Room } from '../types'
+import type { ClimateLog, ContamCheck, ContamResult, Room } from '../types'
 
 function toLocalInput(iso?: string) {
   const d = iso ? new Date(iso) : new Date()
@@ -18,19 +18,47 @@ const empty = {
   notes: '',
 }
 
+const resultLabels: Record<ContamResult, string> = {
+  clear: 'clear（无菌）',
+  suspect: 'suspect（可疑）',
+  positive: 'positive（检出杂菌）',
+}
+
 export default function ClimateLogs() {
   const [rows, setRows] = createSignal<ClimateLog[]>([])
   const [rooms, setRooms] = createSignal<Room[]>([])
+  const [checks, setChecks] = createSignal<ContamCheck[]>([])
   const [form, setForm] = createSignal({ ...empty })
   const [error, setError] = createSignal('')
 
+  // 正在登记快检的环境记录 ID + 快检表单
+  const [checkingId, setCheckingId] = createSignal<number | null>(null)
+  const [checkForm, setCheckForm] = createSignal({
+    result: 'suspect' as ContamResult,
+    checkedAt: toLocalInput(),
+    message: '',
+  })
+  const [checkError, setCheckError] = createSignal('')
+
+  const checkByLog = createMemo(() => {
+    const m = new Map<number, ContamCheck>()
+    for (const c of checks()) m.set(c.climateLogId, c)
+    return m
+  })
+
+  function roomOf(id: number): Room | undefined {
+    return rooms().find((r) => r.id === id)
+  }
+
   async function load() {
-    const [logs, roomList] = await Promise.all([
+    const [logs, roomList, checkList] = await Promise.all([
       api<ClimateLog[]>('/api/climate-logs'),
       api<Room[]>('/api/rooms'),
+      api<ContamCheck[]>('/api/contam-checks'),
     ])
     setRows(logs)
     setRooms(roomList)
+    setChecks(checkList)
   }
 
   onMount(() => {
@@ -69,11 +97,37 @@ export default function ClimateLogs() {
     }
   }
 
+  function openCheck(logId: number) {
+    setCheckError('')
+    setCheckForm({ result: 'suspect', checkedAt: toLocalInput(), message: '' })
+    setCheckingId(logId)
+  }
+
+  async function submitCheck(logId: number) {
+    setCheckError('')
+    try {
+      await api('/api/contam-checks', {
+        method: 'POST',
+        body: JSON.stringify({
+          climateLogId: logId,
+          result: checkForm().result,
+          checkedAt: new Date(checkForm().checkedAt).toISOString(),
+          message: checkForm().message || null,
+        }),
+      })
+      setCheckingId(null)
+      // positive 会在后端把所属室联动为 sanitize，整表刷新拿到新室态
+      await load()
+    } catch (err) {
+      setCheckError(err instanceof Error ? err.message : '快检登记失败')
+    }
+  }
+
   return (
     <div>
       <header class="page-header">
         <h1>环境记录</h1>
-        <p class="muted">温湿度与 CO₂；湿度须 1–100</p>
+        <p class="muted">温湿度与 CO₂；湿度须 1–100。每条记录可挂一条杂菌快检，positive 联动该室进入 sanitize</p>
       </header>
       {error() && <div class="error">{error()}</div>}
 
@@ -151,33 +205,133 @@ export default function ClimateLogs() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>室 ID</th>
+              <th>出菇室</th>
               <th>时间</th>
               <th>温度</th>
               <th>湿度</th>
               <th>CO₂</th>
-              <th>备注</th>
+              <th>杂菌快检</th>
               <th />
             </tr>
           </thead>
           <tbody>
             <For each={rows()}>
-              {(r) => (
-                <tr>
-                  <td>{r.id}</td>
-                  <td>{r.roomId}</td>
-                  <td>{new Date(r.recordedAt).toLocaleString()}</td>
-                  <td>{r.tempC}</td>
-                  <td>{r.humidityPct}%</td>
-                  <td>{r.co2Ppm ?? '—'}</td>
-                  <td>{r.notes || '—'}</td>
-                  <td>
-                    <button type="button" class="btn ghost" onClick={() => remove(r.id)}>
-                      删除
-                    </button>
-                  </td>
-                </tr>
-              )}
+              {(r) => {
+                const check = () => checkByLog().get(r.id)
+                const room = () => roomOf(r.roomId)
+                return (
+                  <>
+                    <tr>
+                      <td>{r.id}</td>
+                      <td>
+                        {r.roomId}
+                        <Show when={room()}>
+                          <span class="muted"> · {room()!.roomCode}</span>
+                        </Show>
+                        <Show when={room()?.status === 'sanitize'}>
+                          <span class="badge sanitize">sanitize</span>
+                        </Show>
+                      </td>
+                      <td>{new Date(r.recordedAt).toLocaleString()}</td>
+                      <td>{r.tempC}</td>
+                      <td>{r.humidityPct}%</td>
+                      <td>{r.co2Ppm ?? '—'}</td>
+                      <td>
+                        <Show
+                          when={check()}
+                          fallback={
+                            <button
+                              type="button"
+                              class="btn ghost"
+                              onClick={() => openCheck(r.id)}
+                            >
+                              登记快检
+                            </button>
+                          }
+                        >
+                          {(c) => (
+                            <div>
+                              <span class={`badge contam-${c().result}`}>{c().result}</span>
+                              <div class="hint">{new Date(c().checkedAt).toLocaleString()}</div>
+                              <Show when={c().message}>
+                                <div class="hint">{c().message}</div>
+                              </Show>
+                            </div>
+                          )}
+                        </Show>
+                      </td>
+                      <td>
+                        <button type="button" class="btn ghost" onClick={() => remove(r.id)}>
+                          删除
+                        </button>
+                      </td>
+                    </tr>
+                    <Show when={checkingId() === r.id}>
+                      <tr>
+                        <td colSpan={8}>
+                          <div class="check-editor panel">
+                            <Show when={checkError()}>
+                              <div class="error">{checkError()}</div>
+                            </Show>
+                            <label>
+                              快检结果
+                              <select
+                                value={checkForm().result}
+                                onChange={(e) =>
+                                  setCheckForm({
+                                    ...checkForm(),
+                                    result: e.currentTarget.value as ContamResult,
+                                  })
+                                }
+                              >
+                                <For each={Object.keys(resultLabels) as ContamResult[]}>
+                                  {(v) => <option value={v}>{resultLabels[v]}</option>}
+                                </For>
+                              </select>
+                            </label>
+                            <label>
+                              检查时间
+                              <input
+                                type="datetime-local"
+                                value={checkForm().checkedAt}
+                                onInput={(e) =>
+                                  setCheckForm({ ...checkForm(), checkedAt: e.currentTarget.value })
+                                }
+                              />
+                            </label>
+                            <label>
+                              说明（可空）
+                              <input
+                                value={checkForm().message}
+                                onInput={(e) =>
+                                  setCheckForm({ ...checkForm(), message: e.currentTarget.value })
+                                }
+                              />
+                            </label>
+                            <div class="check-actions">
+                              <button
+                                type="button"
+                                class="btn primary"
+                                onClick={() => submitCheck(r.id)}
+                              >
+                                提交快检
+                              </button>
+                              <button
+                                type="button"
+                                class="btn ghost"
+                                onClick={() => setCheckingId(null)}
+                              >
+                                取消
+                              </button>
+                              <span class="hint">positive 将联动该室进入 sanitize；idle 室会被拒绝</span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </Show>
+                  </>
+                )
+              }}
             </For>
           </tbody>
         </table>

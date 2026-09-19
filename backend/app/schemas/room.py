@@ -19,3 +19,7 @@ class RoomOutSchema(Schema):
     species = fields.Str()
     capacity_bags = fields.Int(data_key="capacityBags")
     status = fields.Str()
+
+
+class RoomStatusUpdateSchema(Schema):
+    status = fields.Str(required=True, validate=validate.OneOf(ROOM_STATUSES))

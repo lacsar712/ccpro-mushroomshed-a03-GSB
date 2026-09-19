@@ -4,9 +4,10 @@ from marshmallow import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from app.database import SessionLocal
+from app.domain import DomainError, ensure_can_leave_sanitize
 from app.models.room import Room
 from app.models.shed import Shed
-from app.schemas.room import RoomCreateSchema, RoomOutSchema
+from app.schemas.room import RoomCreateSchema, RoomOutSchema, RoomStatusUpdateSchema
 from app.utils import validation_error_response
 
 bp = Blueprint("rooms", __name__, url_prefix="/api/rooms")
@@ -14,6 +15,7 @@ bp = Blueprint("rooms", __name__, url_prefix="/api/rooms")
 create_schema = RoomCreateSchema()
 out_schema = RoomOutSchema()
 out_many = RoomOutSchema(many=True)
+status_update_schema = RoomStatusUpdateSchema()
 
 
 @bp.get("")
@@ -58,6 +60,32 @@ def create_room():
             return jsonify({"detail": "同菇房内出菇室编号已存在"}), 400
         db.refresh(item)
         return jsonify(out_schema.dump(item)), 201
+    finally:
+        db.close()
+
+
+@bp.patch("/<int:room_id>/status")
+@jwt_required()
+def update_room_status(room_id: int):
+    db = SessionLocal()
+    try:
+        try:
+            data = status_update_schema.load(request.get_json(silent=True) or {})
+        except ValidationError as err:
+            return validation_error_response(err)
+        room = db.query(Room).filter(Room.id == room_id).first()
+        if not room:
+            return jsonify({"detail": "出菇室不存在"}), 404
+        new_status = data["status"]
+        try:
+            # 离开 sanitize 须已有 ReleaseNote，否则 409
+            ensure_can_leave_sanitize(db, room, new_status)
+        except DomainError as e:
+            return jsonify({"detail": e.detail}), e.status_code
+        room.status = new_status
+        db.commit()
+        db.refresh(room)
+        return jsonify(out_schema.dump(room))
     finally:
         db.close()
 

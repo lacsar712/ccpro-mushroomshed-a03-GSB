@@ -2,7 +2,9 @@ from datetime import datetime, timedelta, timezone
 
 from app.auth import hash_password
 from app.database import SessionLocal
+from app.domain import apply_contam_result
 from app.models.climate_log import ClimateLog
+from app.models.contam_check import ContamCheck
 from app.models.flush_harvest import FlushHarvest
 from app.models.room import Room
 from app.models.shed import Shed
@@ -137,6 +139,28 @@ def seed() -> None:
                     ),
                 ]
             )
+            db.flush()
+
+            # 一条 positive 杂菌快检：所属出菇室 r3（fruiting）联动进入 sanitize
+            positive_log = ClimateLog(
+                room_id=r3.id,
+                recorded_at=now - timedelta(hours=1),
+                temp_c=19.1,
+                humidity_pct=91,
+                co2_ppm=1020.0,
+                notes="袋口异常，待快检",
+            )
+            db.add(positive_log)
+            db.flush()
+            db.add(
+                ContamCheck(
+                    climate_log_id=positive_log.id,
+                    result="positive",
+                    checked_at=now - timedelta(minutes=40),
+                    message="袋口检出绿色霉斑，判定杂菌污染",
+                )
+            )
+            apply_contam_result(db, r3, "positive")
             db.commit()
             print("Seed data inserted.")
         else:

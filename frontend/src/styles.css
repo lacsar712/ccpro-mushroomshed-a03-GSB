@@ -279,6 +279,36 @@ th {
   color: var(--warn);
 }
 
+.badge.contam-clear {
+  background: #dceee0;
+  color: #2a6b3f;
+}
+
+.badge.contam-suspect {
+  background: #f0ead8;
+  color: #7a6230;
+}
+
+.badge.contam-positive {
+  background: #fde2dd;
+  color: var(--danger);
+}
+
+.check-editor {
+  margin: 8px 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.check-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .badge.grade-a {
   background: #dceee0;
   color: #2a6b3f;

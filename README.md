@@ -47,13 +47,26 @@ docker compose up --build
 3. **Room 出菇室**：`shedId`、`roomCode`、`species`、`capacityBags`、`status(fruiting|idle|sanitize)`；同菇房 `roomCode` 唯一
 4. **ClimateLog 环境记录**：`roomId`、`recordedAt`、`tempC`、`humidityPct`、`co2Ppm`、`notes`；`humidityPct ∈ [1,100]`，否则 **400**
 5. **FlushHarvest 采收**：`roomId`、`harvestedAt`、`flushNo(≥1)`、`weightKg`、`grade(A|B|C)`、`operatorName`；`weightKg > 0`，否则 **400**
-6. **Dashboard**：`shedTotal`、`fruitingRoomCount`、`climateLast24h`、`harvestKgLast7d`
+6. **ContamCheck 杂菌快检**：挂在 ClimateLog 上，`climateLogId` 唯一（每条环境记录最多一条，重复 **409**）、`result(clear|suspect|positive)`、`checkedAt`、`message` 可空。`positive` 时所属 Room 在**后端**联动改为 `sanitize`；`idle` 室禁止因快检进入 sanitize（**409**）；`suspect`/`clear` 不动室态。
+7. **ReleaseNote 消毒解除**：`roomId`、`reason`、`releasedAt`。仅 `sanitize` 室可登记（非 sanitize **409**）；登记后室由后端改回 `fruiting`。Room 离开 `sanitize` 须已有解除记录，否则 `PATCH /api/rooms/{id}/status` 返回 **409**。
+8. **Dashboard**：`shedTotal`、`fruitingRoomCount`、`climateLast24h`、`harvestKgLast7d`
 
-各实体 API：`GET/POST` 列表与创建、`DELETE` 按 ID 删除。
+各实体 API：`GET/POST` 列表与创建、`DELETE` 按 ID 删除。新端点：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET/POST | `/api/contam-checks` | 快检列表（可按 `climateLogId`/`roomId` 过滤）/ 登记快检 |
+| GET/POST | `/api/release-notes` | 解除记录列表（可按 `roomId` 过滤）/ 登记解除并回到 fruiting |
+| PATCH | `/api/rooms/{id}/status` | 改房态，sanitize→其他且无 ReleaseNote 时 **409** |
+
+种子数据含一条 **positive 快检联动**：溪谷恒温菇房 V-01 室因检出杂菌由 fruiting 进入 sanitize。
 
 ## 前端页面
 
 Login · Dashboard · Sheds · Rooms · ClimateLogs · FlushHarvests（侧边栏布局）
+
+- **环境记录页**：每条记录行内登记/展示杂菌快检；positive 提交后重新拉取，能看到该室已被后端置为 sanitize。
+- **出菇室页**：`sanitize` 室提供「解除消毒」入口，登记 reason + releasedAt 后由后端改回 fruiting。
 
 ## 本地开发（可选）
 

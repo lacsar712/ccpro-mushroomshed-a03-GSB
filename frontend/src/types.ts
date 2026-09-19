@@ -37,6 +37,26 @@ export interface FlushHarvest {
   operatorName: string
 }
 
+export type ContamResult = 'clear' | 'suspect' | 'positive'
+
+export interface ContamCheck {
+  id: number
+  climateLogId: number
+  result: ContamResult
+  checkedAt: string
+  message?: string | null
+  roomId: number
+  roomStatus: RoomStatus
+}
+
+export interface ReleaseNote {
+  id: number
+  roomId: number
+  reason: string
+  releasedAt: string
+  roomStatus: RoomStatus
+}
+
 export interface DashboardStats {
   shedTotal: number
   fruitingRoomCount: number
